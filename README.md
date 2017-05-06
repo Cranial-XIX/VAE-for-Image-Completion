@@ -1,4 +1,4 @@
-### Time 5/6/2017
+### Time: 5/6/2017
 
 ### Description of the Project:
 
