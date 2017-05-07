@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 from torchvision import datasets, transforms
+import matplotlib.pyplot as plt
+from IPython.display import Image
 
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -18,6 +20,8 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
+parser.add_argument('--pretrained', type=int, default=0,
+                    help='Whether to use a pretrained model')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -51,16 +55,19 @@ class VAE(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def encode(self, x):
+        # print (x)
         h1 = self.relu(self.fc1(x))
         return self.fc21(h1), self.fc22(h1)
 
     def reparametrize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
+        # print ('logvar',logvar.size())
         if args.cuda:
             eps = torch.cuda.FloatTensor(std.size()).normal_()
         else:
             eps = torch.FloatTensor(std.size()).normal_()
         eps = Variable(eps)
+        # print ('std', std.size(), 'mu', mu.size())
         return eps.mul(std).add_(mu)
 
     def decode(self, z):
@@ -68,6 +75,7 @@ class VAE(nn.Module):
         return self.sigmoid(self.fc4(h3))
 
     def forward(self, x):
+        # print ('x', x.size(), 'x_modified',x.view(-1, 784).size())
         mu, logvar = self.encode(x.view(-1, 784))
         z = self.reparametrize(mu, logvar)
         return self.decode(z), mu, logvar
@@ -80,6 +88,8 @@ if args.cuda:
 reconstruction_function = nn.BCELoss()
 reconstruction_function.size_average = False
 
+def reconstruction_loss(recon_x, x):
+    BCE = reconstruction_
 
 def loss_function(recon_x, x, mu, logvar):
     BCE = reconstruction_function(recon_x, x)
@@ -101,11 +111,15 @@ def train(epoch):
     model.train()
     train_loss = 0
     for batch_idx, (data, _) in enumerate(train_loader):
+        # print ('data',data.size())
         data = Variable(data)
         if args.cuda:
             data = data.cuda()
         optimizer.zero_grad()
         recon_batch, mu, logvar = model(data)
+        # print (data.size())
+        # print (recon_batch.size())
+        # print ('recon',recon_batch.size())
         loss = loss_function(recon_batch, data, mu, logvar)
         loss.backward()
         train_loss += loss.data[0]
@@ -118,7 +132,6 @@ def train(epoch):
 
     print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, train_loss / len(train_loader.dataset)))
-
 
 def test(epoch):
     model.eval()
@@ -134,6 +147,59 @@ def test(epoch):
     print('====> Test set loss: {:.4f}'.format(test_loss))
 
 
-for epoch in range(1, args.epochs + 1):
-    train(epoch)
-    test(epoch)
+
+if args.pretrained == 0:
+    for epoch in range(1, args.epochs + 1):
+        train(epoch)
+        #test(epoch)
+    torch.save({'state_dict': model.state_dict()}, "model_dict")
+else:
+    pre = torch.load("model_dict")
+    model.load_state_dict(pre['state_dict'])
+
+def compare(a, b):
+    to_image = transforms.ToPILImage()
+    to_image(a).show()
+    to_image(b).show()
+
+def show(a):
+    to_image = transforms.ToPILImage()
+    to_image(a).show()
+
+for batch_idx, (data, _) in enumerate(train_loader):
+    test_img = Variable(data[0])
+    break
+
+max_idx = 100000
+mu, var = model.encode(test_img.view(-1, 784))
+z_mu = model.reparametrize(mu, var)
+min = 10000000
+scale = 0.15
+
+for i in xrange(max_idx):
+    z_std = Variable(torch.FloatTensor(1,20).normal_())
+    z = z_mu + scale * z_std
+    recon = model.decode(z)
+    loss = reconstruction_function(recon, test_img)
+    if loss < min:
+        min = loss
+        min_recon = recon
+
+compare(test_img.view(1, 28, -1).data, min_recon.view(1, 28, -1).data)
+
+'''
+i = 0
+max_idx = 2
+for batch_idx, (data, _) in enumerate(train_loader):
+    if i >= max_idx:
+        break
+    i += 1
+    original = Variable(data[0])
+    recon, m, v = model(original)
+    compare(original.view(1, 28, -1).data, recon.view(1, 28, -1).data)
+'''
+
+
+
+
+
