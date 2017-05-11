@@ -8,6 +8,7 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 from IPython.display import Image
+import random
 
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -33,7 +34,7 @@ if args.cuda:
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=True,
+    datasets.MNIST('../data', train=True, download=False,
                    transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(
@@ -111,12 +112,25 @@ def train(epoch):
     model.train()
     train_loss = 0
     for batch_idx, (data, _) in enumerate(train_loader):
-        # print ('data',data.size())
+
+        # print ('data',data.size()[0])
+        # print ('element', data[0,0,2,2])
+
+        newData = data
+        # Random choose a 6 x 6 mask in the image and set it to 0
+        for i in xrange(newData.size()[0]):
+            row = random.randint(3,25)
+            col = random.randint(3,25)
+            # print (i, '\t', row, '\t', col)
+            # print (data[i,0,row-3:row+3, col-3:col+3])
+            newData[i,0,row-3:row+3, col-3:col+3] = 0.0
+
+        newData = Variable(newData)
         data = Variable(data)
         if args.cuda:
             data = data.cuda()
         optimizer.zero_grad()
-        recon_batch, mu, logvar = model(data)
+        recon_batch, mu, logvar = model(newData)
         # print (data.size())
         # print (recon_batch.size())
         # print ('recon',recon_batch.size())
@@ -139,6 +153,14 @@ def test(epoch):
     for data, _ in test_loader:
         if args.cuda:
             data = data.cuda()
+
+        for i in xrange(data.size()[0]):
+            row = random.randint(3,25)
+            col = random.randint(3,25)
+            # print (i, '\t', row, '\t', col)
+            # print (data[i,0,row-3:row+3, col-3:col+3])
+            data[i,0,row-3:row+3, col-3:col+3] = 0.0
+
         data = Variable(data, volatile=True)
         recon_batch, mu, logvar = model(data)
         test_loss += loss_function(recon_batch, data, mu, logvar).data[0]
@@ -151,7 +173,6 @@ def test(epoch):
 if args.pretrained == 0:
     for epoch in range(1, args.epochs + 1):
         train(epoch)
-        #test(epoch)
     torch.save({'state_dict': model.state_dict()}, "model_dict")
 else:
     pre = torch.load("model_dict")
@@ -167,11 +188,19 @@ def show(a):
     to_image(a).show()
 
 for batch_idx, (data, _) in enumerate(train_loader):
-    test_img = Variable(data[0])
+    testImg = data[1]
+    row = random.randint(3,25)
+    col = random.randint(3,25)
+    testImg[0,row-3:row+3, col-3:col+3] = 0.0
+
+    testImg = Variable(testImg)
+    test_img = Variable(data[1])
     break
 
+'''
+# pick the first image as test image
 max_idx = 100000
-mu, var = model.encode(test_img.view(-1, 784))
+mu, var = model.encode(testImg.view(-1, 784))
 z_mu = model.reparametrize(mu, var)
 min = 10000000
 scale = 0.15
@@ -179,11 +208,29 @@ scale = 0.15
 for i in xrange(max_idx):
     z_std = Variable(torch.FloatTensor(1,20).normal_())
     z = z_mu + scale * z_std
-    recon = model.decode(z)
+    recon = model.decode(z_mu)
     loss = reconstruction_function(recon, test_img)
     if loss < min:
         min = loss
         min_recon = recon
+'''
+
+
+mu, var = model.encode(testImg.view(-1, 784))
+z_mu = model.reparametrize(mu, var)
+# min_recon = model.decode(z_mu)
+max_idx = 1000
+min = 10000000
+scale = 0.1
+for i in xrange(max_idx):
+    z_std = Variable(torch.FloatTensor(1,20).normal_())
+    z = z_mu + scale * z_std
+    recon = model.decode(z_mu)
+    loss = reconstruction_function(recon, test_img)
+    if loss < min:
+        min = loss
+        min_recon = recon
+
 
 compare(test_img.view(1, 28, -1).data, min_recon.view(1, 28, -1).data)
 
