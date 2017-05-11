@@ -114,7 +114,7 @@ def train(epoch):
     for batch_idx, (data, _) in enumerate(train_loader):
 
         # print ('data',data.size()[0])
-        # print ('element', data[0,0,2,2])
+        # print ('element', data[0,0,0,0])
 
         newData = data
         # Random choose a 6 x 6 mask in the image and set it to 0
@@ -154,15 +154,17 @@ def test(epoch):
         if args.cuda:
             data = data.cuda()
 
-        for i in xrange(data.size()[0]):
+        newData = data
+        for i in xrange(newData.size()[0]):
             row = random.randint(3,25)
             col = random.randint(3,25)
             # print (i, '\t', row, '\t', col)
             # print (data[i,0,row-3:row+3, col-3:col+3])
-            data[i,0,row-3:row+3, col-3:col+3] = 0.0
+            newData[i,0,row-3:row+3, col-3:col+3] = 0.0
 
+        newData = Variable(newData, volatile=True)
         data = Variable(data, volatile=True)
-        recon_batch, mu, logvar = model(data)
+        recon_batch, mu, logvar = model(newData)
         test_loss += loss_function(recon_batch, data, mu, logvar).data[0]
 
     test_loss /= len(test_loader.dataset)
@@ -187,14 +189,19 @@ def show(a):
     to_image = transforms.ToPILImage()
     to_image(a).show()
 
+
+# visualize result by comparing convered img and original img
 for batch_idx, (data, _) in enumerate(train_loader):
-    testImg = data[1]
+
+    sampleNumber = 15
+    test_img = Variable(data[sampleNumber])
+    testImg = data[sampleNumber]
+
     row = random.randint(3,25)
     col = random.randint(3,25)
     testImg[0,row-3:row+3, col-3:col+3] = 0.0
 
     testImg = Variable(testImg)
-    test_img = Variable(data[1])
     break
 
 '''
@@ -217,14 +224,21 @@ for i in xrange(max_idx):
 
 
 mu, var = model.encode(testImg.view(-1, 784))
-z_mu = model.reparametrize(mu, var)
+# z_mu = model.reparametrize(mu, var)
 # min_recon = model.decode(z_mu)
 max_idx = 1000
 min = 10000000
 scale = 0.1
+<<<<<<< HEAD
+for i in xrange(max_idx):
+    z_mu = model.reparametrize(mu, var)
+    # z_std = Variable(torch.FloatTensor(1,20).normal_())
+    # z = z_mu + scale * z_std
+=======
 for i in range(max_idx):
     z_std = Variable(torch.FloatTensor(1,20).normal_())
     z = z_mu + scale * z_std
+>>>>>>> b8da42390e61f80f79fb413212845e9ab6724b87
     recon = model.decode(z_mu)
     loss = reconstruction_function(recon, test_img)
     if loss < min:
