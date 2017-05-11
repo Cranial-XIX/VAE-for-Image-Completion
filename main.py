@@ -112,17 +112,12 @@ def train(epoch):
     model.train()
     train_loss = 0
     for batch_idx, (data, _) in enumerate(train_loader):
-
-        # print ('data',data.size()[0])
-        # print ('element', data[0,0,0,0])
-
         newData = data
         # Random choose a 6 x 6 mask in the image and set it to 0
         for i in range(newData.size()[0]):
             row = random.randint(3,25)
             col = random.randint(3,25)
-            # print (i, '\t', row, '\t', col)
-            # print (data[i,0,row-3:row+3, col-3:col+3])
+
             newData[i,0,row-3:row+3, col-3:col+3] = 0.0
 
         newData = Variable(newData)
@@ -131,9 +126,7 @@ def train(epoch):
             data = data.cuda()
         optimizer.zero_grad()
         recon_batch, mu, logvar = model(newData)
-        # print (data.size())
-        # print (recon_batch.size())
-        # print ('recon',recon_batch.size())
+        
         loss = loss_function(recon_batch, data, mu, logvar)
         loss.backward()
         train_loss += loss.data[0]
