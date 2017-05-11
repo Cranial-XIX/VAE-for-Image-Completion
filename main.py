@@ -229,16 +229,11 @@ mu, var = model.encode(testImg.view(-1, 784))
 max_idx = 1000
 min = 10000000
 scale = 0.1
-<<<<<<< HEAD
-for i in xrange(max_idx):
+
+for i in range(max_idx):
     z_mu = model.reparametrize(mu, var)
     # z_std = Variable(torch.FloatTensor(1,20).normal_())
     # z = z_mu + scale * z_std
-=======
-for i in range(max_idx):
-    z_std = Variable(torch.FloatTensor(1,20).normal_())
-    z = z_mu + scale * z_std
->>>>>>> b8da42390e61f80f79fb413212845e9ab6724b87
     recon = model.decode(z_mu)
     loss = reconstruction_function(recon, test_img)
     if loss < min:
