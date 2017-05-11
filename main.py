@@ -34,7 +34,7 @@ if args.cuda:
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=False,
+    datasets.MNIST('../data', train=True, download=True,
                    transform=transforms.ToTensor()),
     batch_size=args.batch_size, shuffle=True, **kwargs)
 test_loader = torch.utils.data.DataLoader(
@@ -118,7 +118,7 @@ def train(epoch):
 
         newData = data
         # Random choose a 6 x 6 mask in the image and set it to 0
-        for i in xrange(newData.size()[0]):
+        for i in range(newData.size()[0]):
             row = random.randint(3,25)
             col = random.randint(3,25)
             # print (i, '\t', row, '\t', col)
@@ -222,7 +222,7 @@ z_mu = model.reparametrize(mu, var)
 max_idx = 1000
 min = 10000000
 scale = 0.1
-for i in xrange(max_idx):
+for i in range(max_idx):
     z_std = Variable(torch.FloatTensor(1,20).normal_())
     z = z_mu + scale * z_std
     recon = model.decode(z_mu)
