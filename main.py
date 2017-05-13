@@ -54,7 +54,7 @@ test_loader = torch.utils.data.DataLoader(
         '../data', train=False, 
         transform=transforms.ToTensor()
     ),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
+    batch_size=args.batch_size, shuffle=False, **kwargs)
 
 isVAE = True
 # initialize the model
@@ -62,10 +62,10 @@ if args.model == "VAE" or args.model == "VAE_INC":
     model = VAE()
 elif args.model == "CVAE_LB":
     isVAE = False
-    model = CVAE(784+10, 400, 20, False)
+    model = CVAE(784, 400, 20, 10, False)
 else:
     isVAE = False
-    model = CVAE(784*2, 400, 20, False)
+    model = CVAE(784, 400, 20, 784, False)
 
 if args.cuda:
     model.cuda()
@@ -158,9 +158,10 @@ def train(epoch):
 
         # if it is conditional VAE, we need to compute the condition
         if args.model == "CVAE_LB":
-            cond = Variable(labelembed.index_select(0, Variable(label)))
+            cond = labelembed.index_select(0, Variable(label))
         elif args.model == "CVAE_INC":
             cond = Variable(occludeimg(gldimg))
+            cond = cond.view(cond.size(0), -1)
 
         gldimg = Variable(gldimg)
         # make it cuda variable if allowed
@@ -207,9 +208,10 @@ def test(epoch):
 
         # if it is conditional VAE, we need to compute the condition
         if args.model == "CVAE_LB":
-            cond = Variable(labelembed.index_select(0, Variable(label)), volatile=True)
+            cond = labelembed.index_select(0, Variable(label))
         elif args.model == "CVAE_INC":
             cond = Variable(occludeimg(gldimg), volatile=True)
+            cond = cond.view(cond.size(0), -1)
 
         # make it cuda variable if allowed
         gldimg = Variable(gldimg, volatile=True)
@@ -278,7 +280,7 @@ test_centers = []
 
 # extract the 1st 10 images of 1st batch as test, randomly
 # occlude part of them
-ntest = 1
+ntest = 3
 for batch_idx, (gldimg, label) in enumerate(test_loader):
     iteration = min(args.batch_size, ntest)
     for i in xrange(iteration):
@@ -298,14 +300,12 @@ if args.model == "VAE":
 
         maxidx = 1000
         minloss = 10000000
-        scale = 0.2
         for j in range(maxidx):
-            z_mu = model.reparametrize(mu, var)
-            z_std = Variable(torch.FloatTensor(1,20).normal_())
-            z = z_mu + scale * z_std
+            #z_mu = model.reparametrize(mu, var)
+            z_mu = Variable(torch.FloatTensor(1,20).normal_())
             recon = model.decode(z)
-            recon = occludeimg_with_center(recon.view(1, 28, -1), center)
-            loss = reconstruction_function(recon.view(-1), img.view(-1))
+            recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
+            loss = reconstruction_function(recon1.view(-1), img.view(-1))
             if loss < minloss:
                 minloss = loss
                 min_recon = recon
@@ -320,7 +320,8 @@ elif args.model == "VAE_INC":
         mu, var = model.encode(img.view(1, 784))
         center = test_centers[i]
         for j in range(maxidx):
-            z_mu = model.reparametrize(mu, var)
+            #z_mu = model.reparametrize(mu, var)
+            z_mu = Variable(torch.FloatTensor(1,20).normal_())
             recon = model.decode(z_mu).view(1, 28, -1)
             recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
             loss = reconstruction_function(recon1.view(-1), img.view(-1))
@@ -330,7 +331,51 @@ elif args.model == "VAE_INC":
 
         compare(test_originals[i].data, img.data, min_recon.data)    
 
+elif args.model == "CVAE_LB":
+    for i in xrange(iteration):
+        maxidx = 1000
+        minloss = 10000000
+        img = test_imgs[i]
+        center = test_centers[i]
+        cond = test_labels[i]
+        inp = torch.cat((img.view(1, -1), cond), 1)
+        mu, var = model.encode(inp)
 
+        for j in range(maxidx):
+            #z_mu = model.reparametrize(mu, var)
+            z_mu = Variable(torch.FloatTensor(1,20).normal_())
+            z_mu = torch.cat((z_mu, cond), 1)
+            recon = model.decode(z_mu).view(1, 28, -1)
+            recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
+            loss = reconstruction_function(recon1.view(-1), img.view(-1))
+            if loss < minloss:
+                minloss = loss
+                min_recon = recon
+
+        compare(test_originals[i].data, img.data, min_recon.data)
+
+elif args.model == "CVAE_INC":
+    for i in xrange(iteration):
+        maxidx = 1000
+        minloss = 10000000
+        img = test_imgs[i]
+        center = test_centers[i]
+        cond = test_imgs[i].view(1, -1)
+        inp = torch.cat((img.view(1, -1), cond), 1)
+        mu, var = model.encode(inp)
+
+        for j in range(maxidx):
+            #z_mu = model.reparametrize(mu, var)
+            z_mu = Variable(torch.FloatTensor(1,20).normal_())
+            z_mu = torch.cat((z_mu, cond), 1)
+            recon = model.decode(z_mu).view(1, 28, -1)
+            recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
+            loss = reconstruction_function(recon1.view(-1), img.view(-1))
+            if loss < minloss:
+                minloss = loss
+                min_recon = recon
+
+        compare(test_originals[i].data, img.data, min_recon.data)
 
 
 
