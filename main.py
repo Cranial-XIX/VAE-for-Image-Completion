@@ -2,6 +2,7 @@ from __future__ import print_function
 import argparse
 import matplotlib.pyplot as plt
 import random
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -20,8 +21,8 @@ parser.add_argument('--epochs', type=int, default=10, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--seed', type=int, default=1234, metavar='S',
-                    help='random seed (default: 1234)')
+parser.add_argument('--seed', type=int, default=1904, metavar='S',
+                    help='random seed (default: 1904)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--mode', default="train",
@@ -32,7 +33,7 @@ parser.add_argument('--loss', default="BCE",
                     help='Which loss to use')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-
+random.seed(args.seed)
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
@@ -51,7 +52,7 @@ train_loader = torch.utils.data.DataLoader(
 # testing instances
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST(
-        '../data', train=False, 
+        '../data', train=False,
         transform=transforms.ToTensor()
     ),
     batch_size=args.batch_size, shuffle=False, **kwargs)
@@ -244,6 +245,7 @@ def getfile():
         s = "CVAE_INC_model"
     else:
         print ("INVALID MODEL TYPE!")
+        sys.exit(0)
     return s + "_" + args.loss
 
 ## training or loading model
@@ -280,7 +282,7 @@ test_centers = []
 
 # extract the 1st 10 images of 1st batch as test, randomly
 # occlude part of them
-ntest = 3
+ntest = 1
 for batch_idx, (gldimg, label) in enumerate(test_loader):
     iteration = min(args.batch_size, ntest)
     for i in xrange(iteration):
@@ -302,8 +304,8 @@ if args.model == "VAE":
         minloss = 10000000
         for j in range(maxidx):
             #z_mu = model.reparametrize(mu, var)
-            z_mu = Variable(torch.FloatTensor(1,20).normal_())
-            recon = model.decode(z)
+            z = Variable(torch.FloatTensor(1,20).normal_())
+            recon = model.decode(z).view(1, 28, -1)
             recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
             loss = reconstruction_function(recon1.view(-1), img.view(-1))
             if loss < minloss:
@@ -321,9 +323,9 @@ elif args.model == "VAE_INC":
         center = test_centers[i]
         for j in range(maxidx):
             #z_mu = model.reparametrize(mu, var)
-            z_mu = Variable(torch.FloatTensor(1,20).normal_())
-            recon = model.decode(z_mu).view(1, 28, -1)
-            recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
+            z = Variable(torch.FloatTensor(1,20).normal_())
+            recon = model.decode(z).view(1, 28, -1)
+            recon1 = occludeimg_with_center(recon, center)
             loss = reconstruction_function(recon1.view(-1), img.view(-1))
             if loss < minloss:
                 minloss = loss
@@ -343,10 +345,10 @@ elif args.model == "CVAE_LB":
 
         for j in range(maxidx):
             #z_mu = model.reparametrize(mu, var)
-            z_mu = Variable(torch.FloatTensor(1,20).normal_())
-            z_mu = torch.cat((z_mu, cond), 1)
-            recon = model.decode(z_mu).view(1, 28, -1)
-            recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
+            z = Variable(torch.FloatTensor(1,20).normal_())
+            z = torch.cat((z, cond), 1)
+            recon = model.decode(z).view(1, 28, -1)
+            recon1 = occludeimg_with_center(recon, center)
             loss = reconstruction_function(recon1.view(-1), img.view(-1))
             if loss < minloss:
                 minloss = loss
@@ -366,10 +368,10 @@ elif args.model == "CVAE_INC":
 
         for j in range(maxidx):
             #z_mu = model.reparametrize(mu, var)
-            z_mu = Variable(torch.FloatTensor(1,20).normal_())
-            z_mu = torch.cat((z_mu, cond), 1)
-            recon = model.decode(z_mu).view(1, 28, -1)
-            recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
+            z = Variable(torch.FloatTensor(1,20).normal_())
+            z = torch.cat((z, cond), 1)
+            recon = model.decode(z).view(1, 28, -1)
+            recon1 = occludeimg_with_center(recon, center)
             loss = reconstruction_function(recon1.view(-1), img.view(-1))
             if loss < minloss:
                 minloss = loss
