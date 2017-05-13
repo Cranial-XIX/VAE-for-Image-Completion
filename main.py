@@ -28,7 +28,8 @@ parser.add_argument('--mode', default="train",
                     help='Choose a mode: train or inpainting')
 parser.add_argument('--model', default="VAE",
                     help='Which model to use for autocompletion: VAE, VAE_INC, CVAE_LB, CVAE_INC')
-
+parser.add_argument('--loss', default="BCE",
+                    help='Which loss to use')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -70,7 +71,11 @@ if args.cuda:
     model.cuda()
 
 # Binary Cross-Entropy loss
-reconstruction_function = nn.BCELoss()
+if args.loss == "MSE":
+    reconstruction_function = nn.MSELoss()
+else:
+    reconstruction_function = nn.BCELoss()
+
 reconstruction_function.size_average = False
 
 def loss_function(recon_x, x, mu, logvar):
@@ -97,7 +102,7 @@ def min(a, b):
 def max(a, b):
     return a if a > b else b
 
-half_occludesize = 4
+half_occludesize = 3
 def occludeimg(data):
     # Randomily choose a center that is on the object
     # of the image and mask out a 6*6 square around it
@@ -228,15 +233,16 @@ def test(epoch):
 
 def getfile():
     if args.model == "VAE":
-        return "VAE_model"
+        s = "VAE_model"
     elif args.model == "VAE_INC":
-        return "VAE_INC_model"
+        s = "VAE_INC_model"
     elif args.model == "CVAE_LB":
-        return "CVAE_LB_model"
+        s = "CVAE_LB_model"
     elif args.model == "CVAE_INC":
-        return "CVAE_INC_model"
+        s = "CVAE_INC_model"
     else:
         print ("INVALID MODEL TYPE!")
+    return s + "_" + args.loss
 
 ## training or loading model
 if args.mode == "train":
@@ -253,10 +259,11 @@ elif args.mode == "inpainting":
     model.load_state_dict(pre['state_dict'])
 
 # some helper function to show up images
-def compare(a, b):
+def compare(a, *b):
     to_image = transforms.ToPILImage()
     to_image(a).show()
-    to_image(b).show()
+    for i in b:
+        to_image(i).show()
 
 def show(a):
     to_image = transforms.ToPILImage()
@@ -271,7 +278,7 @@ test_centers = []
 
 # extract the 1st 10 images of 1st batch as test, randomly
 # occlude part of them
-ntest = 3
+ntest = 1
 for batch_idx, (gldimg, label) in enumerate(test_loader):
     iteration = min(args.batch_size, ntest)
     for i in xrange(iteration):
@@ -303,26 +310,25 @@ if args.model == "VAE":
                 minloss = loss
                 min_recon = recon
 
-        compare(img.data, min_recon.data)
+        compare(test_originals[i].data, img.data, min_recon.data)
 
 elif args.model == "VAE_INC":
     for i in xrange(iteration):
         maxidx = 1000
         minloss = 10000000
-        scale = 0.2
         img = test_imgs[i]
         mu, var = model.encode(img.view(1, 784))
         center = test_centers[i]
         for j in range(maxidx):
             z_mu = model.reparametrize(mu, var)
-            recon = model.decode(z_mu)
-            recon = occludeimg_with_center(recon.view(1, 28, -1), center)
-            loss = reconstruction_function(recon.view(-1), img.view(-1))
+            recon = model.decode(z_mu).view(1, 28, -1)
+            recon1 = occludeimg_with_center(recon.view(1, 28, -1), center)
+            loss = reconstruction_function(recon1.view(-1), img.view(-1))
             if loss < minloss:
                 minloss = loss
                 min_recon = recon
 
-        compare(img.data, min_recon.data)    
+        compare(test_originals[i].data, img.data, min_recon.data)    
 
 
 
