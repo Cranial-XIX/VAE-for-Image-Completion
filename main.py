@@ -25,7 +25,7 @@ parser.add_argument('--seed', type=int, default=1234, metavar='S',
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--mode', default="train",
-                    help='Whether to use a pretrained model')
+                    help='Choose a mode: train or inpainting')
 parser.add_argument('--model', default="VAE",
                     help='Which model to use for autocompletion: VAE, VAE_INC, CVAE_LB, CVAE_INC')
 
@@ -97,21 +97,47 @@ def min(a, b):
 def max(a, b):
     return a if a > b else b
 
+half_occludesize = 4
 def occludeimg(data):
     # Randomily choose a center that is on the object
     # of the image and mask out a 6*6 square around it
     occluded = data.clone()
     size = occluded.size()
     for i in range(size[0]):
-        nonzeros = torch.nonzero(newData[i,0])
-        choice = random.randint(len(nonzeros))
+        nonzeros = torch.nonzero(occluded[i,0])
+        choice = random.randint(0, len(nonzeros)-1)
         row = nonzeros[choice][0]
         col = nonzeros[choice][1]
-        left = max(0, col-3)
-        right = min(27, col+3)
-        top = max(0, row-3)
-        bot = min(27, row+3)
-        incomplete[i,0,top:bot, left:right] = 0.0
+        left = max(0, col-half_occludesize)
+        right = min(27, col+half_occludesize)
+        top = max(0, row-half_occludesize)
+        bot = min(27, row+half_occludesize)
+        occluded[i,0, top:bot, left:right] = 0.0
+    return occluded
+
+# used for testing
+def occludeimg_and_returncenter(data):
+    # Randomily choose a center that is on the object
+    # of the image and mask out a 6*6 square around it
+    occluded = data.clone()
+    size = occluded.size()
+    nonzeros = torch.nonzero(occluded[0])
+    choice = random.randint(0, len(nonzeros)-1)
+    row = nonzeros[choice][0]
+    col = nonzeros[choice][1]
+    left = max(0, col-half_occludesize)
+    right = min(27, col+half_occludesize)
+    top = max(0, row-half_occludesize)
+    bot = min(27, row+half_occludesize)
+    occluded[0, top:bot, left:right] = 0.0
+    return occluded, (top, bot, left, right)
+
+def occludeimg_with_center(data, center):
+    # Randomily choose a center that is on the object
+    # of the image and mask out a 6*6 square around it
+    top, bot, left, right = center
+    occluded = data.clone()
+    occluded[0, top:bot, left:right] = 0.0
     return occluded
 
 def train(epoch):
@@ -119,18 +145,19 @@ def train(epoch):
     train_loss = 0
     for batch_idx, (gldimg, label) in enumerate(train_loader):
         # determine the input for the model
-        gldimg = Variable(gldimg)
+
         if args.model == "VAE" or args.model == "CVAE_INC":
-            inp = gldimg
+            inp = Variable(gldimg)
         else:
             inp = Variable(occludeimg(gldimg))
 
         # if it is conditional VAE, we need to compute the condition
         if args.model == "CVAE_LB":
-            cond = Variable(labelembed.index_select(0, label))
+            cond = Variable(labelembed.index_select(0, Variable(label)))
         elif args.model == "CVAE_INC":
             cond = Variable(occludeimg(gldimg))
 
+        gldimg = Variable(gldimg)
         # make it cuda variable if allowed
         if args.cuda:
             inp = inp.cuda()
@@ -166,22 +193,35 @@ def train(epoch):
 def test(epoch):
     model.eval()
     test_loss = 0
-    for data, _ in test_loader:
+    for batch_idx, (gldimg, label) in enumerate(test_loader):
+        # determine the input for the model
+        if args.model == "VAE" or args.model == "CVAE_INC":
+            inp = Variable(gldimg, volatile=True)
+        else:
+            inp = Variable(occludeimg(gldimg), volatile=True)
+
+        # if it is conditional VAE, we need to compute the condition
+        if args.model == "CVAE_LB":
+            cond = Variable(labelembed.index_select(0, Variable(label)), volatile=True)
+        elif args.model == "CVAE_INC":
+            cond = Variable(occludeimg(gldimg), volatile=True)
+
+        # make it cuda variable if allowed
+        gldimg = Variable(gldimg, volatile=True)
         if args.cuda:
-            data = data.cuda()
+            inp = inp.cuda()
+            gldimg = gldimg.cuda()
+            cond = cond.cuda()
 
-        newData = data
-        for i in xrange(newData.size()[0]):
-            row = random.randint(3,25)
-            col = random.randint(3,25)
-            # print (i, '\t', row, '\t', col)
-            # print (data[i,0,row-3:row+3, col-3:col+3])
-            newData[i,0,row-3:row+3, col-3:col+3] = 0.0
+        # forward
+        if isVAE:
+            # VAE
+            recon_batch, mu, logvar = model(inp)
+        else:
+            # CVAE
+            recon_batch, mu, logvar = model(inp, cond)
 
-        newData = Variable(newData, volatile=True)
-        data = Variable(data, volatile=True)
-        recon_batch, mu, logvar = model(newData)
-        test_loss += loss_function(recon_batch, data, mu, logvar).data[0]
+        test_loss += loss_function(recon_batch, gldimg, mu, logvar).data[0]
 
     test_loss /= len(test_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
@@ -201,11 +241,14 @@ def getfile():
 ## training or loading model
 if args.mode == "train":
     savefile = getfile()
+    # TODO make the training cleaner and faster
     for epoch in range(1, args.epochs + 1):
         train(epoch)
+        test(epoch)
     torch.save({'state_dict': model.state_dict()}, savefile)
 elif args.mode == "inpainting":
     loadfile = getfile()
+    print ("loading file from ", loadfile)
     pre = torch.load(loadfile)
     model.load_state_dict(pre['state_dict'])
 
@@ -219,70 +262,67 @@ def show(a):
     to_image = transforms.ToPILImage()
     to_image(a).show()
 
+# visualize result by comparing occluded img and original img
+print ("Start testing the autocompletion ...")
+test_imgs = []
+test_labels = []
+test_originals = []
+test_centers = []
 
-# visualize result by comparing convered img and original img
-for batch_idx, (data, _) in enumerate(train_loader):
-
-    sampleNumber = 15
-    test_img = Variable(data[sampleNumber])
-    testImg = data[sampleNumber]
-
-    row = random.randint(3,25)
-    col = random.randint(3,25)
-    testImg[0,row-3:row+3, col-3:col+3] = 0.0
-
-    testImg = Variable(testImg)
+# extract the 1st 10 images of 1st batch as test, randomly
+# occlude part of them
+ntest = 3
+for batch_idx, (gldimg, label) in enumerate(test_loader):
+    iteration = min(args.batch_size, ntest)
+    for i in xrange(iteration):
+        test_originals.append(Variable(gldimg[i]))
+        occluded, center = occludeimg_and_returncenter(gldimg[i])
+        test_imgs.append(Variable(occluded))
+        test_centers.append(center)
+        lb = Variable( torch.LongTensor( [label[i]] ) )
+        test_labels.append(labelembed.index_select(0, lb))
     break
 
-'''
-# pick the first image as test image
-max_idx = 100000
-mu, var = model.encode(testImg.view(-1, 784))
-z_mu = model.reparametrize(mu, var)
-min = 10000000
-scale = 0.15
+if args.model == "VAE":
+    for i in xrange(iteration):
+        img = test_imgs[i]
+        mu, var = model.encode(img.view(1, 784))
+        center = test_centers[i]
 
-for i in xrange(max_idx):
-    z_std = Variable(torch.FloatTensor(1,20).normal_())
-    z = z_mu + scale * z_std
-    recon = model.decode(z_mu)
-    loss = reconstruction_function(recon, test_img)
-    if loss < min:
-        min = loss
-        min_recon = recon
-'''
+        maxidx = 1000
+        minloss = 10000000
+        scale = 0.2
+        for j in range(maxidx):
+            z_mu = model.reparametrize(mu, var)
+            z_std = Variable(torch.FloatTensor(1,20).normal_())
+            z = z_mu + scale * z_std
+            recon = model.decode(z)
+            recon = occludeimg_with_center(recon.view(1, 28, -1), center)
+            loss = reconstruction_function(recon.view(-1), img.view(-1))
+            if loss < minloss:
+                minloss = loss
+                min_recon = recon
 
+        compare(img.data, min_recon.data)
 
-mu, var = model.encode(testImg.view(-1, 784))
-# z_mu = model.reparametrize(mu, var)
-# min_recon = model.decode(z_mu)
-max_idx = 1000
-min = 10000000
-scale = 0.1
+elif args.model == "VAE_INC":
+    for i in xrange(iteration):
+        maxidx = 1000
+        minloss = 10000000
+        scale = 0.2
+        img = test_imgs[i]
+        mu, var = model.encode(img.view(1, 784))
+        center = test_centers[i]
+        for j in range(maxidx):
+            z_mu = model.reparametrize(mu, var)
+            recon = model.decode(z_mu)
+            recon = occludeimg_with_center(recon.view(1, 28, -1), center)
+            loss = reconstruction_function(recon.view(-1), img.view(-1))
+            if loss < minloss:
+                minloss = loss
+                min_recon = recon
 
-for i in range(max_idx):
-    z_mu = model.reparametrize(mu, var)
-    # z_std = Variable(torch.FloatTensor(1,20).normal_())
-    # z = z_mu + scale * z_std
-    recon = model.decode(z_mu)
-    loss = reconstruction_function(recon, test_img)
-    if loss < min:
-        min = loss
-        min_recon = recon
-
-compare(test_img.view(1, 28, -1).data, min_recon.view(1, 28, -1).data)
-
-'''
-i = 0
-max_idx = 2
-for batch_idx, (data, _) in enumerate(train_loader):
-    if i >= max_idx:
-        break
-    i += 1
-    original = Variable(data[0])
-    recon, m, v = model(original)
-    compare(original.view(1, 28, -1).data, recon.view(1, 28, -1).data)
-'''
+        compare(img.data, min_recon.data)    
 
 
 
