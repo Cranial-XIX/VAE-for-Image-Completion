@@ -10,6 +10,10 @@ Basically,Variational Autoencoder (VAE) is a type of interesting generative mode
 
 VAEs are widely used in computer vision. We found the generativity of VAE is particularly interesting and hypothesized that we can take advantage of its generativity to do image completion task. The goal of the Project then is to let VAE learn the generation process of a given type of images, then try to recover the occluded part of images by selecting the most promising reconstructed one. We developed 4 variations of VAEs and test their performance on occluded images from MNIST data.
 
+
+### Demo of our project poster:
+Please click this [link](https://github.com/tiandiao123/Variational-Autoencoder/blob/master/Final_VAE.pdf)!
+
 ### Training the Model:
 ```
 python main.py --mode train --loss (BCE, MSE) --model (VAE, VAE_INC, CVAE_LB, CVAE_INC)
