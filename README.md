@@ -1,5 +1,5 @@
 ### Time: 5/6/2017
-### Authors: Bo Liu, Yunhan Zhao, Cuiqing Li(Github: tiandiao123)
+### Authors: Bo Liu, Yunhan Zhao, Cuiqing Li
 ### Location: department of computer science of the Johns Hopkins University
 
 ### Description of the Project:
